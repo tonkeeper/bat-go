@@ -8,7 +8,7 @@ import (
 func TestBasic(t *testing.T) {
 	token := NewTokenV1(10, 20).WithSubtokenID(34534).WithTTL(time.Hour)
 	token.Sign([]byte("secret"))
-	s := token.String1()
+	s := token.String()
 	token2, err := ParseToken(s)
 	if err != nil {
 		t.Fatal(err)

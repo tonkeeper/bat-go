@@ -17,14 +17,9 @@ type TokenV1 struct {
 	IsSubtoken bool
 	SubtokenID uint32
 	ExpireAt   *time.Time
-	Limits     *Limits
+	Limits     *RateLimits
 	BindIP     net.IP
 	Signature  [32]byte
-}
-
-type Limits struct {
-	RPS                float32
-	BurstMultiplicator uint8
 }
 
 func NewTokenV1(appID, tokenID uint32) *TokenV1 {
@@ -48,12 +43,12 @@ func (t *TokenV1) WithExpireAt(t1 time.Time) *TokenV1 {
 	return t
 }
 
-func (t *TokenV1) WithRateLimits(rps float32, burstMultiplicator uint8) *TokenV1 {
-	t.Limits = &Limits{RPS: rps, BurstMultiplicator: burstMultiplicator}
+func (t *TokenV1) WithRateLimits(rps float32, burstMultiplicator uint8, perIP bool) *TokenV1 {
+	t.Limits = &RateLimits{RPS: rps, BurstMultiplicator: burstMultiplicator, PerIP: perIP}
 	return t
 }
 
-func (t TokenV1) String1() string {
+func (t TokenV1) String() string {
 	return strings.TrimRight(base32.StdEncoding.EncodeToString(append(t.serialize(), t.Signature[:]...)), "=")
 }
 
@@ -67,13 +62,22 @@ func (t TokenV1) serialize() []byte {
 		b = binary.BigEndian.AppendUint32(b, t.SubtokenID)
 	}
 	var flags uint16
+	flagsOffset := len(b)
+	b = append(b, 0, 0)
 	if t.ExpireAt != nil {
 		flags = setBit(flags, 0)
-	}
-	b = binary.BigEndian.AppendUint16(b, flags)
-	if t.ExpireAt != nil {
 		b = binary.BigEndian.AppendUint32(b, uint32(t.ExpireAt.Unix()))
 	}
+	if t.Limits != nil {
+		flags = setBit(flags, 1)
+		b = append(b, encodeLimits(*t.Limits)...)
+	}
+	if 0 < len(t.BindIP) && len(t.BindIP) < 256 {
+		flags = setBit(flags, 2)
+		b = append(b, byte(len(t.BindIP)))
+		b = append(b, t.BindIP...)
+	}
+	binary.BigEndian.PutUint16(b[flagsOffset:flagsOffset+2], flags)
 	return b
 }
 
@@ -110,6 +114,25 @@ func (t *TokenV1) parse(b []byte) error {
 		expire := time.Unix(int64(binary.BigEndian.Uint32(b[offset:offset+4])), 0)
 		offset += 4
 		t.ExpireAt = &expire
+	}
+	if isBitSet(flags, 1) {
+		if len(b) < offset+6 {
+			return fmt.Errorf("invalid token length %v", len(b))
+		}
+		t.Limits = parsLimit(b[offset : offset+6])
+		offset += 6
+	}
+	if isBitSet(flags, 2) {
+		if len(b) < offset+1 {
+			return fmt.Errorf("invalid token length %v", len(b))
+		}
+		length := int(b[offset])
+		offset++
+		if len(b) < offset+length {
+			return fmt.Errorf("invalid token length %v", len(b))
+		}
+		t.BindIP = b[offset : offset+length]
+		offset += length
 	}
 	if len(b) < offset+32 {
 		return fmt.Errorf("invalid token length %v", len(b))
