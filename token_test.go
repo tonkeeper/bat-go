@@ -1,4 +1,4 @@
-package bat_go
+package bat
 
 import (
 	"testing"
