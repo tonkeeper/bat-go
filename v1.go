@@ -6,7 +6,6 @@ import (
 	"encoding/base32"
 	"encoding/binary"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 )
@@ -18,7 +17,8 @@ type TokenV1 struct {
 	SubtokenID uint32
 	ExpireAt   *time.Time
 	Limits     *RateLimits
-	BindIP     net.IP
+	ipVersion  byte
+	ipHash     uint32
 	Signature  [32]byte
 }
 
@@ -72,10 +72,10 @@ func (t TokenV1) serialize() []byte {
 		flags = setBit(flags, 1)
 		b = append(b, encodeLimits(*t.Limits)...)
 	}
-	if 0 < len(t.BindIP) && len(t.BindIP) < 256 {
+	if t.ipVersion != 0 {
 		flags = setBit(flags, 2)
-		b = append(b, byte(len(t.BindIP)))
-		b = append(b, t.BindIP...)
+		b = append(b, t.ipVersion)
+		b = binary.BigEndian.AppendUint32(b, t.ipHash)
 	}
 	binary.BigEndian.PutUint16(b[flagsOffset:flagsOffset+2], flags)
 	return b
@@ -123,16 +123,13 @@ func (t *TokenV1) parse(b []byte) error {
 		offset += 6
 	}
 	if isBitSet(flags, 2) {
-		if len(b) < offset+1 {
+		if len(b) < offset+5 {
 			return fmt.Errorf("invalid token length %v", len(b))
 		}
-		length := int(b[offset])
+		t.ipVersion = b[offset]
 		offset++
-		if len(b) < offset+length {
-			return fmt.Errorf("invalid token length %v", len(b))
-		}
-		t.BindIP = b[offset : offset+length]
-		offset += length
+		t.ipHash = binary.BigEndian.Uint32(b[offset : offset+4])
+		offset += 4
 	}
 	if len(b) < offset+32 {
 		return fmt.Errorf("invalid token length %v", len(b))
