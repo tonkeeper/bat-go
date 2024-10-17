@@ -20,6 +20,7 @@ type TokenV1 struct {
 	ipVersion  byte
 	ipHash     uint32
 	Signature  [32]byte
+	Webhooks   bool
 }
 
 func NewTokenV1(appID, tokenID uint32) *TokenV1 {
@@ -29,6 +30,11 @@ func NewTokenV1(appID, tokenID uint32) *TokenV1 {
 func (t *TokenV1) WithSubtokenID(id uint32) *TokenV1 {
 	t.IsSubtoken = true
 	t.SubtokenID = id
+	return t
+}
+
+func (t *TokenV1) WithWebhooks() *TokenV1 {
+	t.Webhooks = true
 	return t
 }
 
@@ -76,6 +82,9 @@ func (t TokenV1) serialize() []byte {
 		flags = setBit(flags, 2)
 		b = append(b, t.ipVersion)
 		b = binary.BigEndian.AppendUint32(b, t.ipHash)
+	}
+	if t.Webhooks {
+		flags = setBit(flags, 3)
 	}
 	binary.BigEndian.PutUint16(b[flagsOffset:flagsOffset+2], flags)
 	return b
@@ -130,6 +139,9 @@ func (t *TokenV1) parse(b []byte) error {
 		offset++
 		t.ipHash = binary.BigEndian.Uint32(b[offset : offset+4])
 		offset += 4
+	}
+	if isBitSet(flags, 3) {
+		t.Webhooks = true
 	}
 	if len(b) < offset+32 {
 		return fmt.Errorf("invalid token length %v", len(b))
