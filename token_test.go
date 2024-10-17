@@ -7,6 +7,9 @@ import (
 
 func TestBasic(t *testing.T) {
 	token := NewTokenV1(10, 20).WithSubtokenID(34534).WithTTL(time.Hour)
+	if token.Webhooks {
+		t.Fatal("webhooks should be false by default")
+	}
 	token.Sign([]byte("secret"))
 	s := token.String()
 	token2, err := ParseToken(s)
@@ -27,5 +30,24 @@ func TestBasic(t *testing.T) {
 	}
 	if !token2.ValidSignature([]byte("secret")) {
 		t.Fatal("invalid signature")
+	}
+	if token2.Webhooks {
+		t.Fatal("webhooks should be false by default")
+	}
+}
+
+func TestWebhooks(t *testing.T) {
+	token := NewTokenV1(10, 20).WithWebhooks()
+	if !token.Webhooks {
+		t.Fatal("webhooks must be true")
+	}
+	token.Sign([]byte("secret"))
+	s := token.String()
+	token2, err := ParseToken(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !token2.Webhooks {
+		t.Fatal("webhooks must be true")
 	}
 }
